@@ -1,95 +1,89 @@
 """Command-line interface for envdiff."""
 
-import sys
+from __future__ import annotations
+
 import argparse
+import sys
 from pathlib import Path
 
-from envdiff.parser import parse_env_file, EnvParseError
 from envdiff.comparator import compare_envs
-from envdiff.reporter import format_report, exit_code
+from envdiff.config import load_config
+from envdiff.formatter import OutputFormat, render
+from envdiff.parser import EnvParseError, parse_env_file
+from envdiff.reporter import exit_code
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build and return the argument parser."""
-    parser = argparse.ArgumentParser(
+    p = argparse.ArgumentParser(
         prog="envdiff",
-        description="Compare .env files across environments and surface missing or mismatched variables.",
+        description="Compare .env files across environments.",
     )
-    parser.add_argument(
-        "base",
-        metavar="BASE",
-        help="Path to the base .env file (e.g. .env.example)",
-    )
-    parser.add_argument(
-        "target",
-        metavar="TARGET",
-        help="Path to the target .env file to compare against base",
-    )
-    parser.add_argument(
+    p.add_argument("base", help="Base .env file (reference)")
+    p.add_argument("target", help="Target .env file to compare against base")
+    p.add_argument(
         "--ignore-values",
         action="store_true",
         default=False,
         help="Only check for missing keys; ignore value mismatches",
     )
-    parser.add_argument(
-        "--no-color",
-        action="store_true",
-        default=False,
-        help="Disable colored output",
+    p.add_argument(
+        "--ignore-keys",
+        nargs="+",
+        metavar="KEY",
+        default=[],
+        help="Keys to exclude from comparison",
     )
-    parser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        default=False,
-        help="Suppress output; only set exit code",
+    p.add_argument(
+        "--config",
+        metavar="PATH",
+        default=None,
+        help="Path to envdiff config file (default: auto-discover)",
     )
-    return parser
+    p.add_argument(
+        "--format",
+        choices=["text", "json", "csv"],
+        default="text",
+        dest="output_format",
+        help="Output format (default: text)",
+    )
+    return p
 
 
 def run(argv: list[str] | None = None) -> int:
-    """Entry point for the CLI. Returns an exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    base_path = Path(args.base)
-    target_path = Path(args.target)
+    config = load_config(args.config)
 
-    for path in (base_path, target_path):
-        if not path.exists():
-            print(f"envdiff: error: file not found: {path}", file=sys.stderr)
-            return 2
+    ignore_values: bool = args.ignore_values or config.ignore_values
+    ignore_keys: list[str] = list(set(args.ignore_keys) | set(config.ignore_keys))
+    output_format: OutputFormat = args.output_format
 
     try:
-        base_vars = parse_env_file(base_path)
+        base_vars = parse_env_file(Path(args.base))
+        target_vars = parse_env_file(Path(args.target))
     except EnvParseError as exc:
-        print(f"envdiff: error parsing {base_path}: {exc}", file=sys.stderr)
+        print(f"envdiff: parse error: {exc}", file=sys.stderr)
         return 2
-
-    try:
-        target_vars = parse_env_file(target_path)
-    except EnvParseError as exc:
-        print(f"envdiff: error parsing {target_path}: {exc}", file=sys.stderr)
+    except FileNotFoundError as exc:
+        print(f"envdiff: file not found: {exc}", file=sys.stderr)
         return 2
 
     result = compare_envs(
         base_vars,
         target_vars,
-        base_name=str(base_path),
-        target_name=str(target_path),
-        ignore_values=args.ignore_values,
+        ignore_values=ignore_values,
+        ignore_keys=ignore_keys,
     )
 
-    if not args.quiet:
-        report = format_report(result, use_color=not args.no_color)
-        print(report, end="")
+    base_name = Path(args.base).name
+    target_name = Path(args.target).name
+
+    report = render(result, output_format, base_name=base_name, target_name=target_name)
+    print(report, end="" if report.endswith("\n") else "\n")
 
     return exit_code(result)
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover
     sys.exit(run())
-
-
-if __name__ == "__main__":
-    main()
