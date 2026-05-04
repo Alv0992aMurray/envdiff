@@ -8,45 +8,50 @@ from pathlib import Path
 
 from envdiff.comparator import compare_envs
 from envdiff.config import load_config
-from envdiff.formatter import OutputFormat, render
-from envdiff.parser import EnvParseError, parse_env_file
-from envdiff.reporter import exit_code
+from envdiff.formatter import render
+from envdiff.parser import parse_env_file, EnvParseError
+from envdiff.reporter import format_report, exit_code
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="envdiff",
         description="Compare .env files across environments.",
     )
-    p.add_argument("base", help="Base .env file (reference)")
-    p.add_argument("target", help="Target .env file to compare against base")
-    p.add_argument(
+    parser.add_argument("base", help="Base .env file (source of truth)")
+    parser.add_argument("target", help="Target .env file to compare against base")
+    parser.add_argument(
         "--ignore-values",
         action="store_true",
         default=False,
-        help="Only check for missing keys; ignore value mismatches",
+        help="Only report missing keys, not value mismatches",
     )
-    p.add_argument(
-        "--ignore-keys",
-        nargs="+",
-        metavar="KEY",
-        default=[],
-        help="Keys to exclude from comparison",
-    )
-    p.add_argument(
-        "--config",
-        metavar="PATH",
-        default=None,
-        help="Path to envdiff config file (default: auto-discover)",
-    )
-    p.add_argument(
+    parser.add_argument(
         "--format",
         choices=["text", "json", "csv"],
         default="text",
         dest="output_format",
         help="Output format (default: text)",
     )
-    return p
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to envdiff config file",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        default=False,
+        help="Re-run comparison whenever the .env files change",
+    )
+    parser.add_argument(
+        "--watch-interval",
+        type=float,
+        default=1.0,
+        metavar="SECONDS",
+        help="Polling interval for --watch mode (default: 1.0)",
+    )
+    return parser
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -54,35 +59,46 @@ def run(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     config = load_config(args.config)
+    ignore_values = args.ignore_values or config.ignore_values
 
-    ignore_values: bool = args.ignore_values or config.ignore_values
-    ignore_keys: list[str] = list(set(args.ignore_keys) | set(config.ignore_keys))
-    output_format: OutputFormat = args.output_format
+    def _compare_and_print() -> int:
+        try:
+            base = parse_env_file(args.base)
+            target = parse_env_file(args.target)
+        except EnvParseError as exc:
+            print(f"envdiff: parse error: {exc}", file=sys.stderr)
+            return 2
 
-    try:
-        base_vars = parse_env_file(Path(args.base))
-        target_vars = parse_env_file(Path(args.target))
-    except EnvParseError as exc:
-        print(f"envdiff: parse error: {exc}", file=sys.stderr)
-        return 2
-    except FileNotFoundError as exc:
-        print(f"envdiff: file not found: {exc}", file=sys.stderr)
-        return 2
+        result = compare_envs(base, target, ignore_values=ignore_values)
 
-    result = compare_envs(
-        base_vars,
-        target_vars,
-        ignore_values=ignore_values,
-        ignore_keys=ignore_keys,
-    )
+        if args.output_format == "text":
+            print(format_report(result, use_color=sys.stdout.isatty()))
+        else:
+            print(render(result, fmt=args.output_format))
 
-    base_name = Path(args.base).name
-    target_name = Path(args.target).name
+        return exit_code(result)
 
-    report = render(result, output_format, base_name=base_name, target_name=target_name)
-    print(report, end="" if report.endswith("\n") else "\n")
+    if args.watch:
+        from envdiff.watcher import watch_and_compare
 
-    return exit_code(result)
+        print(f"Watching {args.base} and {args.target} for changes …", file=sys.stderr)
+        _compare_and_print()
+
+        def _on_change() -> None:
+            print("\n--- files changed, re-running ---", file=sys.stderr)
+            _compare_and_print()
+
+        try:
+            watch_and_compare(
+                [args.base, args.target],
+                callback=_on_change,
+                interval=args.watch_interval,
+            )
+        except KeyboardInterrupt:
+            pass
+        return 0
+
+    return _compare_and_print()
 
 
 def main() -> None:  # pragma: no cover
