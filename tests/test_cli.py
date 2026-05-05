@@ -75,3 +75,14 @@ def test_invalid_env_file_exits_two(tmp_env):
     # at minimum the run should not raise an unhandled exception.
     result = run([str(base), str(target)])
     assert result in (0, 1, 2)
+
+
+def test_extra_key_in_target_exits_zero(tmp_env):
+    """Keys present in target but absent from base should not cause a failure.
+
+    The diff is directional: base defines the required keys, and target is
+    checked against it.  Extra keys in target are not an error.
+    """
+    base = tmp_env(".env.base", "FOO=bar\n")
+    target = tmp_env(".env.target", "FOO=bar\nEXTRA=value\n")
+    assert run([str(base), str(target)]) == 0
