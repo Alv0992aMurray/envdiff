@@ -75,3 +75,15 @@ def test_returns_dict_type(tmp_path):
     f = write_env(tmp_path, "A=1\n")
     result = parse_env_file(f)
     assert isinstance(result, dict)
+
+
+def test_inline_comment_stripped(tmp_path):
+    """Inline comments after a value should be stripped from unquoted values."""
+    f = write_env(tmp_path, "FOO=bar  # some comment\n")
+    assert parse_env_file(f) == {"FOO": "bar"}
+
+
+def test_inline_comment_preserved_in_quoted_value(tmp_path):
+    """A hash inside a quoted value should NOT be treated as a comment."""
+    f = write_env(tmp_path, 'FOO="bar # not a comment"\n')
+    assert parse_env_file(f) == {"FOO": "bar # not a comment"}
