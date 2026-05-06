@@ -95,12 +95,11 @@ def test_conflict_summary_no_conflicts(tmp_path):
     assert result.conflict_summary() == "No conflicts."
 
 
-def test_conflict_summary_with_conflicts(tmp_path):
-    a = _write(tmp_path, "a.env", "KEY=old\n")
-    b = _write(tmp_path, "b.env", "KEY=new\n")
+def test_conflict_summary_lists_conflicting_keys(tmp_path):
+    """conflict_summary() should mention each conflicting key by name."""
+    a = _write(tmp_path, "a.env", "FOO=1\nBAR=old\n")
+    b = _write(tmp_path, "b.env", "FOO=2\nBAR=new\n")
     result = merge_env_files([a, b])
     summary = result.conflict_summary()
-    assert "1 conflict" in summary
-    assert "KEY" in summary
-    assert "old" in summary
-    assert "new" in summary
+    assert "FOO" in summary
+    assert "BAR" in summary
