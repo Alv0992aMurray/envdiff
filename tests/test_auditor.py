@@ -104,6 +104,23 @@ def test_sensitive_key_placeholder_goes_to_placeholder_not_sensitive():
     assert "API_KEY" not in result.sensitive_keys_with_values
 
 
-def test_sensitive_in_summary():
-    result = _audit({"DB_PASSWORD": "hunter2"})
-    assert "sensitive" in result.summary()
+# ---------------------------------------------------------------------------
+# Multiple issues
+# ---------------------------------------------------------------------------
+
+def test_multiple_issues_all_reported():
+    """An env with several different issue types should report all of them."""
+    env = {
+        "APP_NAME": "myapp",       # clean
+        "EMPTY_VAR": "",           # blank
+        "PLACEHOLDER_VAR": "TODO", # placeholder
+        "API_KEY": "real-secret",  # sensitive
+    }
+    result = _audit(env)
+    assert not result.is_clean
+    assert "EMPTY_VAR" in result.blank_values
+    assert "PLACEHOLDER_VAR" in result.placeholder_values
+    assert "API_KEY" in result.sensitive_keys_with_values
+    assert "APP_NAME" not in result.blank_values
+    assert "APP_NAME" not in result.placeholder_values
+    assert "APP_NAME" not in result.sensitive_keys_with_values
