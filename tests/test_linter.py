@@ -101,3 +101,13 @@ def test_lint_issue_str():
     assert "Line 3" in s
     assert "E001" in s
     assert "foo" in s
+
+
+def test_duplicate_key_reported_on_correct_line(tmp_env):
+    """E003 should reference the line number of the duplicate (second) occurrence."""
+    p = tmp_env("FOO=bar\nBAR=1\nFOO=baz\n")
+    result = lint_env_file(p)
+    e003_issues = [i for i in result.issues if i.code == "E003"]
+    assert e003_issues, "Expected at least one E003 issue"
+    # The duplicate FOO appears on line 3
+    assert any(i.line == 3 for i in e003_issues)
