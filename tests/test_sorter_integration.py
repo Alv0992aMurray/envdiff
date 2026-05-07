@@ -59,3 +59,14 @@ def test_parse_then_sort_no_group_flat_sorted(env_file):
     result = sort_env(env, group_by_prefix=False)
     keys = [k for k, _ in result.ungrouped]
     assert keys == sorted(keys)
+
+
+def test_parse_then_sort_groups_are_internally_sorted(env_file):
+    """Keys within each prefix group should be sorted alphabetically."""
+    env = parse_env_file(env_file)
+    result = sort_env(env)
+    for group_name, pairs in result.groups.items():
+        keys = [k for k, _ in pairs]
+        assert keys == sorted(keys), (
+            f"Keys in group '{group_name}' are not sorted: {keys}"
+        )
