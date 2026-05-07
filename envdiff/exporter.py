@@ -63,6 +63,31 @@ def export_markdown(result: EnvDiffResult) -> str:
     return header + "\n".join(rows) + "\n"
 
 
+def export_dotenv(result: EnvDiffResult) -> str:
+    """Generate a dotenv snippet containing only the differing keys.
+
+    Useful for quickly patching an environment with the values from the base
+    for any keys that are missing or mismatched in the target.
+
+    Returns a string in standard KEY=VALUE dotenv format.
+    """
+    lines: list[str] = [
+        "# envdiff patch — keys missing or mismatched in target",
+        "",
+    ]
+
+    patch_keys = sorted(
+        set(result.missing_in_target) | set(result.mismatched.keys())
+    )
+
+    for key in patch_keys:
+        value = result.base.get(key, "")
+        lines.append(f"{key}={value}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def write_export(content: str, path: Path) -> None:
     """Write *content* to *path*, creating parent directories as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
