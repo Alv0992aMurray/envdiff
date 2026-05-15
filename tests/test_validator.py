@@ -100,6 +100,12 @@ def test_strict_mode_flags_unknown_keys():
 
 
 def test_non_strict_mode_ignores_unknown_keys():
-    schema = EnvSchema(required={"DB_URL"})
-    result = validate({"DB_URL": "x", "EXTRA": "y"}, schema, strict=False)
-    assert result.unknown_keys == []
+    """Unknown keys should not be reported when strict mode is off (default)."""
+    schema = EnvSchema(required={"DB_URL"}, optional={"DEBUG"})
+    result = validate(
+        {"DB_URL": "x", "DEBUG": "true", "UNEXPECTED": "1"},
+        schema,
+        strict=False,
+    )
+    assert not result.unknown_keys
+    assert result.is_valid is True
